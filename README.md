@@ -73,7 +73,7 @@ unzip report.zip -d report_extracted
 
 ### المتطلبات
 ```bash
-pip install Pillow pypdf
+مكتبات قياسية فعلنا
 ```
 (المكتبتان فقط مطلوبتان؛ ملفات Office تُعالَج بمكتبة `zipfile`
 المدمجة في بايثون، فلا تحتاج مكتبة إضافية).
