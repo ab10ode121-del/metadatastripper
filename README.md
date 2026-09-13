@@ -1,2 +1,123 @@
-# metadatastripper
-A command-line tool designed to protect privacy by extracting and removing hidden metadata and PII from images, PDFs, and Office documents.
+# MetadataStripper 
+
+أداة سطر أوامر (CLI) بلغة Python تقوم بتنظيف الملفات من **البيانات
+الوصفية (Metadata)** التي قد تكشف معلومات شخصية (PII) عن صاحب الملف،
+مثل: الاسم، اسم الشركة، موقع GPS، نوع الجهاز، تاريخ الإنشاء، وغيرها.
+
+## 1. فكرة المشروع باختصار (لفهمها والشرح عنها)
+
+كل ملف تقريبًا (صورة، PDF، مستند Word) لا يحتوي فقط على المحتوى الذي
+تراه، بل يحمل معه معلومات إضافية "خفية" تسمى **Metadata**. مثلًا:
+
+| نوع الملف | أمثلة على البيانات الوصفية المخفية |
+|---|---|
+| صورة (JPG) | إحداثيات GPS، نوع الكاميرا/الهاتف، تاريخ ووقت الالتقاط |
+| PDF | اسم الكاتب (Author)، البرنامج المستخدم (Producer/Creator) |
+| Word / Excel | اسم آخر شخص عدّل الملف، اسم الشركة، عدد مرات التعديل |
+
+هذه المعلومات خطيرة من ناحية الخصوصية: لو رفعت صورة على الإنترنت وفيها
+إحداثيات GPS، أي شخص يقدر يعرف وين التقطتها بالضبط. ولو أرسلت سيرتك
+الذاتية بصيغة Word، ممكن يظهر فيها اسم جهاز شركتك القديمة كـ "آخر معدّل".
+
+**عمل الأداة:** تفتح الملف، تقرأ الميتاداتا، تعرضها لك (تقرير)، ثم تنشئ
+نسخة جديدة من الملف بنفس المحتوى تمامًا لكن بدون تلك البيانات.
+
+## 2. الأنواع المدعومة ولماذا كل نوع يحتاج طريقة مختلفة
+
+### أ) الصور (JPG, PNG, TIFF, WEBP)
+تُخزَّن البيانات الوصفية داخل الصورة بصيغة تسمى **EXIF**. الطريقة
+الأسهل والأضمن لحذفها هي: نفتح الصورة، ننسخ **بيانات البكسلات فقط**
+(الألوان الفعلية) إلى صورة جديدة فارغة من أي وسوم EXIF، ثم نحفظها.
+هذا أضمن من "تعديل" EXIF لأنه لا يترك أي أثر خلفه.
+
+```python
+img = Image.open(path)
+data = list(img.getdata())          # نسخ الألوان فقط
+clean_img = Image.new(img.mode, img.size)
+clean_img.putdata(data)
+clean_img.save(output_path)         # حفظ بدون أي exif
+```
+
+### ب) ملفات PDF
+كل PDF يحتوي على قاموس صغير اسمه **Document Info** فيه حقول مثل
+`/Author` و `/Producer` و `/CreationDate`. نعيد بناء الملف صفحة
+بصفحة (بدون تغيير المحتوى المرئي إطلاقًا) لكن مع قاموس معلومات فارغ.
+
+```python
+writer = PdfWriter()
+for page in reader.pages:
+    writer.add_page(page)
+writer.add_metadata({"/Producer": "", "/Creator": ""})
+```
+
+### ج) ملفات Office: Word / Excel / PowerPoint (.docx / .xlsx / .pptx)
+هذه الصيغ الحديثة (Open XML) هي في الحقيقة **ملف ZIP مضغوط** يحتوي عدة
+ملفات XML داخله. جرّب هذا بنفسك:
+
+```bash
+cp report.docx report.zip
+unzip report.zip -d report_extracted
+```
+
+ستجد مجلد اسمه `docProps` بداخله:
+- `core.xml` → العنوان، اسم الكاتب، تاريخ الإنشاء والتعديل
+- `app.xml` → اسم البرنامج المستخدم (Word/Excel version)، الشركة
+- `custom.xml` → أي خصائص مخصصة أضافها المستخدم
+
+الأداة تفتح الأرشيف، **تُبقي كل الملفات الأخرى كما هي بدون أي تغيير**
+(المحتوى، الصور، التنسيق)، وتستبدل محتوى ملفات `docProps` الثلاثة فقط
+بنسخة فارغة صالحة البنية. لاحظ أننا **لا نحذف** هذه الملفات من الأرشيف
+نهائيًا، لأن ملفات أخرى (`[Content_Types].xml`) تشير إليها بالاسم،
+وحذفها بالكامل يكسر الملف ("corrupted file"). لذلك نُفرغ محتواها فقط.
+
+## 3. طريقة التشغيل
+
+### المتطلبات
+```bash
+pip install Pillow pypdf
+```
+(المكتبتان فقط مطلوبتان؛ ملفات Office تُعالَج بمكتبة `zipfile`
+المدمجة في بايثون، فلا تحتاج مكتبة إضافية).
+
+### الأوامر
+
+**تنظيف ملف واحد** (سينشئ ملف جديد بجانبه بلاحقة `_clean`):
+```bash
+python3 metadata_stripper.py photo.jpg
+```
+
+**تحديد اسم/مسار الملف الناتج:**
+```bash
+python3 metadata_stripper.py cv.docx -o cv_for_employer.docx
+```
+
+**عرض البيانات الوصفية فقط بدون حذفها** :
+```bash
+python3 metadata_stripper.py report.pdf --report-only
+```
+
+**تنظيف مجلد كامل دفعة واحدة:**
+```bash
+python3 metadata_stripper.py ./my_files_folder --recursive
+```
+
+## 4. مثال لمخرجات الأداة
+
+```
+$ python3 metadata_stripper.py photo.jpg
+
+📄 photo.jpg
+   - GPSInfo: {1: 'N', 2: (24.0, 42.0, 1.2), ...}
+   - Model: iPhone 13 Pro
+   - DateTime: 2026:03:11 15:42:00
+   ✅ تم الحفظ بدون بيانات وصفية → photo_clean.jpg
+```
+
+
+## 6. بنية المشروع
+
+```
+MetadataStripper/
+├── metadata_stripper.py   # الكود الرئيسي بالكامل
+└── README.md              # هذا الملف
+```
